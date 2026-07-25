@@ -3,7 +3,7 @@ program ParseTomlWithLibrary;
 {$mode objfpc}{$H+}{$J-}
 
 uses
-  SysUtils, Classes, TOML, TOML.Types;
+  SysUtils, Classes, TOML, TOML.Types, FGL;
 
 type
   // 3次元ベクトル構造体
@@ -32,12 +32,13 @@ type
     Material: string;
   end;
 
-  TObjectArray = array of TSceneObject;
+  // FGL を使用したジェネリックリスト型定義
+  TSceneObjectList = specialize TFPGList<TSceneObject>;
 
   // シーン全体データ構造体
   TSceneData = record
     Camera: TCamera;
-    Objects: TObjectArray;
+    Objects: TSceneObjectList;
   end;
 
 // ====================================================
@@ -68,9 +69,11 @@ var
   RootTable, CamTable, ObjTable: TTOMLTable;
   Val, SubVal: TTOMLValue;
   ObjArray: TTOMLArray;
+  SceneObj: TSceneObject;
   I: Integer;
 begin
   Result := False;
+  Scene.Objects := nil;
 
   if not FileExists(FilePath) then
   begin
@@ -79,82 +82,100 @@ begin
   end;
 
   try
-    // toml-fp ライブラリの関数でファイルからテーブルを生成
-    RootTable := ParseTOMLFromFile(FilePath);
+    // FGL リストの初期化
+    Scene.Objects := TSceneObjectList.Create;
+
     try
-      // ------------------------------------------------
-      // 1. [camera] テーブルの読み込み
-      // ------------------------------------------------
-      if RootTable.TryGetValue('camera', Val) and (Val.ValueType = tvtTable) then
-      begin
-        CamTable := Val.AsTable;
-
-        if CamTable.TryGetValue('position', SubVal) then
-          Scene.Camera.Position := GetVector3(SubVal);
-
-        if CamTable.TryGetValue('direction', SubVal) then
-          Scene.Camera.Direction := GetVector3(SubVal);
-
-        if CamTable.TryGetValue('width', SubVal) then
-          Scene.Camera.Width := SubVal.AsInteger;
-
-        if CamTable.TryGetValue('height', SubVal) then
-          Scene.Camera.Height := SubVal.AsInteger;
-
-        if CamTable.TryGetValue('samples', SubVal) then
-          Scene.Camera.Samples := SubVal.AsInteger;
-
-        if CamTable.TryGetValue('plane_distance', SubVal) then
-          Scene.Camera.PlaneDistance := SubVal.AsFloat;
-      end;
-
-      // ------------------------------------------------
-      // 2. [[objects]] テーブル配列の読み込み
-      // ------------------------------------------------
-      if RootTable.TryGetValue('objects', Val) and (Val.ValueType = tvtArray) then
-      begin
-        ObjArray := Val.AsArray;
-        SetLength(Scene.Objects, ObjArray.Count);
-
-        for I := 0 to ObjArray.Count - 1 do
+      // toml-fp ライブラリの関数でファイルからテーブルを生成
+      RootTable := ParseTOMLFromFile(FilePath);
+      try
+        // ------------------------------------------------
+        // 1. [camera] テーブルの読み込み
+        // ------------------------------------------------
+        if RootTable.TryGetValue('camera', Val) and (Val.ValueType = tvtTable) then
         begin
-          if ObjArray.GetItem(I).ValueType = tvtTable then
+          CamTable := Val.AsTable;
+
+          if CamTable.TryGetValue('position', SubVal) then
+            Scene.Camera.Position := GetVector3(SubVal);
+
+          if CamTable.TryGetValue('direction', SubVal) then
+            Scene.Camera.Direction := GetVector3(SubVal);
+
+          if CamTable.TryGetValue('width', SubVal) then
+            Scene.Camera.Width := SubVal.AsInteger;
+
+          if CamTable.TryGetValue('height', SubVal) then
+            Scene.Camera.Height := SubVal.AsInteger;
+
+          if CamTable.TryGetValue('samples', SubVal) then
+            Scene.Camera.Samples := SubVal.AsInteger;
+
+          if CamTable.TryGetValue('plane_distance', SubVal) then
+            Scene.Camera.PlaneDistance := SubVal.AsFloat;
+        end;
+
+        // ------------------------------------------------
+        // 2. [[objects]] テーブル配列の読み込み
+        // ------------------------------------------------
+        if RootTable.TryGetValue('objects', Val) and (Val.ValueType = tvtArray) then
+        begin
+          ObjArray := Val.AsArray;
+
+          for I := 0 to ObjArray.Count - 1 do
           begin
-            ObjTable := ObjArray.GetItem(I).AsTable;
+            if ObjArray.GetItem(I).ValueType = tvtTable then
+            begin
+              ObjTable := ObjArray.GetItem(I).AsTable;
+              
+              // TSceneObject を初期化
+              FillChar(SceneObj, SizeOf(SceneObj), 0);
 
-            if ObjTable.TryGetValue('name', SubVal) then
-              Scene.Objects[I].Name := SubVal.AsString;
+              if ObjTable.TryGetValue('name', SubVal) then
+                SceneObj.Name := SubVal.AsString;
 
-            if ObjTable.TryGetValue('type', SubVal) then
-              Scene.Objects[I].ObjectType := SubVal.AsString;
+              if ObjTable.TryGetValue('type', SubVal) then
+                SceneObj.ObjectType := SubVal.AsString;
 
-            if ObjTable.TryGetValue('radius', SubVal) then
-              Scene.Objects[I].Radius := SubVal.AsFloat;
+              if ObjTable.TryGetValue('radius', SubVal) then
+                SceneObj.Radius := SubVal.AsFloat;
 
-            if ObjTable.TryGetValue('position', SubVal) then
-              Scene.Objects[I].Position := GetVector3(SubVal);
+              if ObjTable.TryGetValue('position', SubVal) then
+                SceneObj.Position := GetVector3(SubVal);
 
-            if ObjTable.TryGetValue('emission', SubVal) then
-              Scene.Objects[I].Emission := GetVector3(SubVal);
+              if ObjTable.TryGetValue('emission', SubVal) then
+                SceneObj.Emission := GetVector3(SubVal);
 
-            if ObjTable.TryGetValue('color', SubVal) then
-              Scene.Objects[I].Color := GetVector3(SubVal);
+              if ObjTable.TryGetValue('color', SubVal) then
+                SceneObj.Color := GetVector3(SubVal);
 
-            if ObjTable.TryGetValue('material', SubVal) then
-              Scene.Objects[I].Material := SubVal.AsString;
+              if ObjTable.TryGetValue('material', SubVal) then
+                SceneObj.Material := SubVal.AsString;
+
+              // FGL リストに追加
+              Scene.Objects.Add(SceneObj);
+            end;
           end;
         end;
-      end;
 
-      Result := True;
-    finally
-      // RootTable を Free すると、内部のすべてのネストされたテーブル・配列・値も自動で破棄されます
-      RootTable.Free;
+        Result := True;
+      finally
+        // RootTable を Free すると、内部のすべてのネストされたテーブル・配列・値も自動で破棄されます
+        RootTable.Free;
+      end;
+    except
+      on E: Exception do
+      begin
+        Writeln('TOMLパースエラー: ', E.Message);
+        if Scene.Objects <> nil then
+          Scene.Objects.Free;
+        Result := False;
+      end;
     end;
   except
     on E: Exception do
     begin
-      Writeln('TOMLパースエラー: ', E.Message);
+      Writeln('初期化エラー: ', E.Message);
       Result := False;
     end;
   end;
@@ -185,8 +206,8 @@ begin
     Writeln;
 
     // オブジェクト一覧の出力
-    Writeln('[Objects (Total: ', Length(Scene.Objects), ')]');
-    for I := 0 to High(Scene.Objects) do
+    Writeln('[Objects (Total: ', Scene.Objects.Count, ')]');
+    for I := 0 to Scene.Objects.Count - 1 do
     begin
       Obj := Scene.Objects[I];
       Writeln(Format('  #%d: %s (%s, Material: %s)', [I + 1, Obj.Name, Obj.ObjectType, Obj.Material]));
@@ -194,5 +215,8 @@ begin
       Writeln(Format('      Pos: (%g, %g, %g)', [Obj.Position.X, Obj.Position.Y, Obj.Position.Z]));
       Writeln(Format('      Color: (%g, %g, %g)', [Obj.Color.X, Obj.Color.Y, Obj.Color.Z]));
     end;
+
+    // リソースの解放
+    Scene.Objects.Free;
   end;
 end.
