@@ -143,8 +143,8 @@ end;
 var
   TargetFiles: array[0..2] of string = (
     'test-sphere.toml',
-    'test-cornel.toml',
-    'test-obj.toml'
+    'toml-cornel.toml',
+    'toml-obj.toml'
   );
   FileName: string;
 begin
